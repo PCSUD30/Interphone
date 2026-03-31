@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Interphone - Open Source</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root { --primary: #2563eb; --success: #16a34a; --danger: #dc2626; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f8fafc; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.3s; }
+        .btn-blue { background: var(--primary); }
+        .btn-green { background: var(--success); }
+        .btn-red { background: var(--danger); }
+        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; transform: scaleX(-1); }
+        #qrcode { display: flex; justify-content: center; margin-top: 20px; }
+        .hidden { display: none; }
+        .status { font-size: 0.9rem; color: #64748b; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>🔔 QR Interphone</h1>
+    
+    <div id="setup-ui">
+        <p>Entrez un nom pour votre interphone :</p>
+        <input type="text" id="peer-id" placeholder="Ex: maison-du-bonheur">
+        <button class="btn-blue" onclick="startOwner()">Créer mon Interphone</button>
+        <p style="font-size: 0.8rem; color: #94a3b8;">Partagez ensuite le QR code généré.</p>
+    </div>
+
+    <div id="call-ui" class="hidden">
+        <div id="status" class="status">Initialisation...</div>
+        <video id="remote-video" autoplay playsinline></video>
+        <div id="qrcode-container">
+            <p>Votre QR Code à imprimer :</p>
+            <div id="qrcode"></div>
+        </div>
+        <button class="btn-red" onclick="location.href=location.pathname">Raccrocher / Quitter</button>
+    </div>
+</div>
+
+<script>
+    let peer = null;
+    const statusEl = document.getElementById('status');
+
+    // Vérifier si un ID est présent dans l'URL (Scan du QR Code)
+    window.onload = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetId = urlParams.get('id');
+        if (targetId) {
+            startVisitor(targetId);
+        }
+    };
+
+    // LOGIQUE PROPRIÉTAIRE (Celui qui reçoit l'appel)
+    function startOwner() {
+        const id = document.getElementById('peer-id').value;
+        if (!id) return alert("Choissisez un nom !");
+
+        peer = new Peer(id);
+        switchUI();
+        
+        peer.on('open', () => {
+            statusEl.innerText = "En attente d'un visiteur...";
+            generateQR(id);
+        });
+
+        peer.on('call', (call) => {
+            statusEl.innerText = "Appel en cours !";
+            call.answer(); // Le proprio reçoit la vidéo du visiteur
+            call.on('stream', (stream) => {
+                document.getElementById('remote-video').srcObject = stream;
+            });
+        });
+    }
+
+    // LOGIQUE VISITEUR (Celui qui scanne le QR)
+    function startVisitor(targetId) {
+        peer = new Peer();
+        switchUI();
+        document.getElementById('qrcode-container').classList.add('hidden');
+
+        peer.on('open', () => {
+            statusEl.innerText = "Appel de l'interphone...";
+            
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then((stream) => {
+                    const call = peer.call(targetId, stream);
+                    statusEl.innerText = "Ça sonne...";
+                    // Optionnel : voir le retour caméra du proprio s'il l'active
+                    call.on('stream', (remoteStream) => {
+                        document.getElementById('remote-video').srcObject = remoteStream;
+                    });
+                })
+                .catch(err => {
+                    statusEl.innerText = "Erreur caméra : " + err;
+                });
+        });
+    }
+
+    function generateQR(id) {
+        const fullUrl = window.location.origin + window.location.pathname + "?id=" + id;
+        new QRCode(document.getElementById("qrcode"), {
+            text: fullUrl,
+            width: 150,
+            height: 150
+        });
+    }
+
+    function switchUI() {
+        document.getElementById('setup-ui').classList.add('hidden');
+        document.getElementById('call-ui').classList.remove('hidden');
+    }
+</script>
+
+</body>
+</html>
