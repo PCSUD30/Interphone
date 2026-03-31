@@ -3,37 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flashez pour sonner</title>
+    <title>Interphone QR Pro + Sonnerie</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        :root { --primary: #2563eb; --danger: #ef4444; --dark: #1e293b; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 1.5rem; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        
-        /* Vidéo principale (l'autre personne) */
-        .video-container { position: relative; width: 100%; aspect-ratio: 3/4; background: #000; border-radius: 1rem; overflow: hidden; margin: 15px 0; }
+        :root { --primary: #2563eb; --danger: #ef4444; --dark: #0f172a; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 1.5rem; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        .video-container { position: relative; width: 100%; aspect-ratio: 3/4; background: #000; border-radius: 1rem; overflow: hidden; margin: 15px 0; border: 2px solid #334155; }
         #remote-video { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Ma vidéo (petite vignette) */
-        #local-video { position: absolute; bottom: 10px; right: 10px; width: 30%; aspect-ratio: 3/4; border-radius: 0.5rem; border: 2px solid white; object-fit: cover; transform: scaleX(-1); background: #334155; }
-        
+        #local-video { position: absolute; bottom: 10px; right: 10px; width: 30%; aspect-ratio: 3/4; border-radius: 0.5rem; border: 2px solid white; object-fit: cover; transform: scaleX(-1); }
         input { width: 100%; padding: 12px; border-radius: 8px; border: none; margin-bottom: 10px; font-size: 1rem; }
-        button { width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }
+        button { width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: 0.2s; }
         .btn-start { background: var(--primary); color: white; }
         .btn-hangup { background: var(--danger); color: white; margin-top: 10px; }
         .hidden { display: none; }
         #qrcode { background: white; padding: 10px; border-radius: 10px; display: inline-block; margin-top: 15px; }
-        .status { font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px; }
+        .status { font-size: 0.9rem; color: #94a3b8; margin-bottom: 10px; font-weight: 500; }
+        .incoming-call-anim { animation: pulse 1.5s infinite; color: #fbbf24; font-weight: bold; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div id="setup-ui">
-        <h2>🚀 Flachez pour sonner</h2>
-        <input type="text" id="peer-id" placeholder="Ex: Maison-88">
-        <button class="btn-start" onclick="init(true)">Démarrer comme Propriétaire</button>
+        <h2>🔔 Mon Interphone QR</h2>
+        <input type="text" id="peer-id" placeholder="Ex: Bureau-Jean">
+        <button class="btn-start" onclick="init(true)">Activer l'Interphone</button>
     </div>
 
     <div id="call-ui" class="hidden">
@@ -45,88 +42,88 @@
         </div>
 
         <div id="qr-area">
-            <p>QR Code pour vos visiteurs :</p>
+            <p style="font-size: 0.8rem;">Scanner pour sonner :</p>
             <div id="qrcode"></div>
         </div>
 
-        <button class="btn-hangup" onclick="location.href=location.pathname">Quitter l'appel</button>
+        <button class="btn-hangup" onclick="location.reload()">Raccrocher / Reset</button>
     </div>
 </div>
 
 <script>
     let peer, localStream;
-    const remoteVideo = document.getElementById('remote-video');
-    const localVideo = document.getElementById('local-video');
-    const statusTxt = document.getElementById('status');
+    const ringtone = new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3');
+    ringtone.loop = true;
 
-    // Détection automatique si l'URL contient un ID (scan du QR)
     window.onload = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const tid = urlParams.get('id');
         if (tid) {
             document.getElementById('peer-id').value = tid;
-            init(false); // Démarrer en mode visiteur
+            init(false);
         }
     };
 
     async function init(isOwner) {
         const id = document.getElementById('peer-id').value;
-        if (!id) return alert("Veuillez saisir un identifiant.");
+        if (!id) return alert("ID requis");
 
-        // 1. Masquer l'interface de setup
         document.getElementById('setup-ui').classList.add('hidden');
         document.getElementById('call-ui').classList.remove('hidden');
 
-        // 2. Capturer la caméra et le micro (pour les deux côtés)
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideo.srcObject = localStream;
-            statusTxt.innerText = "Caméra activée. Connexion...";
+            document.getElementById('local-video').srcObject = localStream;
         } catch (e) {
-            alert("Erreur caméra : " + e.message);
+            alert("Erreur caméra/micro : " + e.message);
             return;
         }
 
-        // 3. Initialiser PeerJS
         peer = isOwner ? new Peer(id) : new Peer();
 
-        peer.on('open', (myId) => {
+        peer.on('open', () => {
             if (isOwner) {
-                statusTxt.innerText = "En attente d'un visiteur...";
+                document.getElementById('status').innerText = "🏠 En attente d'un visiteur...";
                 generateQR(id);
             } else {
-                statusTxt.innerText = "Appel en cours...";
+                document.getElementById('status').innerText = "🔔 Appel en cours...";
                 document.getElementById('qr-area').classList.add('hidden');
-                // Le visiteur appelle immédiatement le propriétaire
-                const call = peer.call(id, localStream);
-                handleCall(call);
+                handleCall(peer.call(id, localStream));
             }
         });
 
-        // 4. Le propriétaire reçoit l'appel
+        // RÉCEPTION DE L'APPEL (Côté Propriétaire)
         peer.on('call', (call) => {
-            statusTxt.innerText = "Appel entrant !";
-            call.answer(localStream); // Répond avec sa propre caméra
+            document.getElementById('status').innerText = "⚠️ QUELQU'UN SONNE !";
+            document.getElementById('status').classList.add('incoming-call-anim');
+            
+            // Jouer la sonnerie
+            ringtone.play().catch(e => console.log("L'utilisateur doit interagir avec la page d'abord."));
+            
+            // On répond automatiquement avec notre flux
+            call.answer(localStream);
             handleCall(call);
         });
     }
 
     function handleCall(call) {
         call.on('stream', (remoteStream) => {
-            remoteVideo.srcObject = remoteStream;
-            statusTxt.innerText = "Communication établie ✅";
+            // Arrêter la sonnerie quand la vidéo arrive
+            ringtone.pause();
+            ringtone.currentTime = 0;
+            
+            document.getElementById('status').innerText = "✅ En communication";
+            document.getElementById('status').classList.remove('incoming-call-anim');
+            document.getElementById('remote-video').srcObject = remoteStream;
+            document.getElementById('qr-area').classList.add('hidden');
         });
-        
-        call.on('close', () => {
-            alert("L'appel a pris fin.");
-            location.reload();
-        });
+
+        call.on('close', () => location.reload());
     }
 
     function generateQR(id) {
         const url = window.location.origin + window.location.pathname + "?id=" + id;
-        document.getElementById('qrcode').innerHTML = "";
-        new QRCode(document.getElementById("qrcode"), { text: url, width: 150, height: 150 });
+        new QRCode(document.getElementById("qrcode"), { text: url, width: 120, height: 120 });
     }
 </script>
 
